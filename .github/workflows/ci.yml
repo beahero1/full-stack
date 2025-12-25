@@ -1,0 +1,44 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          npm install
+
+      - name: Initialize test database
+        run: |
+          cd backend
+          mkdir -p data
+          sqlite3 data/calcflow.test.db <<'SQL'
+          CREATE TABLE IF NOT EXISTS calculations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            a REAL NOT NULL,
+            b REAL NOT NULL,
+            operator TEXT NOT NULL,
+            result REAL NOT NULL,
+            created_at INTEGER NOT NULL
+          );
+          SQL
+
+      - name: Run backend tests
+        run: |
+          cd backend
+          npm test
