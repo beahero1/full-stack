@@ -1,0 +1,57 @@
+name: Deploy to Aliyun ECS
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install rsync
+        run: sudo apt-get update && sudo apt-get install -y rsync
+
+      - name: Setup SSH key and known_hosts
+        shell: bash
+        run: |
+          set -e
+          mkdir -p ~/.ssh
+          # Write private key from GitHub Secret into a file
+          echo "${{ secrets.ECS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          # Trust the server host key (required for non-interactive SSH)
+          ssh-keyscan -H "${{ secrets.ECS_HOST }}" >> ~/.ssh/known_hosts
+          # Quick connectivity test (helps debugging)
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes \
+            "${{ secrets.ECS_USER }}@${{ secrets.ECS_HOST }}" "echo connected"
+
+      - name: Upload code to ECS (rsync)
+        shell: bash
+        run: |
+          set -e
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes" \
+            ./ \
+            "${{ secrets.ECS_USER }}@${{ secrets.ECS_HOST }}:/root/apps/CalcFlow"
+
+      - name: Deploy (install deps, build, restart)
+        shell: bash
+        run: |
+          set -e
+          ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes \
+            "${{ secrets.ECS_USER }}@${{ secrets.ECS_HOST }}" << 'EOF'
+          set -e
+          # Backend
+          cd /root/apps/CalcFlow/backend
+          npm ci || npm install
+          pm2 restart calcflow-backend || pm2 restart all
+          # Frontend
+          cd /root/apps/CalcFlow/frontend
+          npm ci || npm install
+          npm run build
+          # Reload Nginx
+          systemctl reload nginx
+          EOF
